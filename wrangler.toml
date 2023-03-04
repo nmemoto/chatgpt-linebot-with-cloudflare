@@ -1,0 +1,19 @@
+name = "chatgpt"
+compatibility_date = "2023-01-01"
+
+[[ d1_databases ]]
+binding = "DB" # i.e. available in your Worker on env.DB
+database_name = ""
+database_id = ""
+
+[[queues.producers]]
+queue = ""
+binding = "QUEUE"
+
+[[queues.consumers]]
+queue = ""
+max_batch_size = 1 # optional: defaults to 10
+max_batch_timeout = 1 # optional: defaults to 5 seconds
+
+[env.production]
+name = "CHANNEL_ACCESS_TOKEN"

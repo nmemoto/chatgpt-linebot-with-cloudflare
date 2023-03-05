@@ -1,9 +1,11 @@
 import { TextMessage, WebhookEvent } from "@line/bot-sdk";
+import { Hono } from "hono";
 
-type Environment = {
+type Bindings = {
   DB: D1Database;
   QUEUE: Queue;
   CHANNEL_ACCESS_TOKEN: string;
+  CHANNEL_SECRET: string;
   OPENAI_API_KEY: string;
 };
 
@@ -50,38 +52,33 @@ type ChatGPTResponse = {
   }[];
 };
 
+const app = new Hono<{ Bindings: Bindings }>();
+
+app.post("/api/webhook", async (c) => {
+  // Extract From Request Body
+  const data = await c.req.json<RequestBody>();
+  const event = data.events[0];
+  if (event.type !== "message" || event.message.type !== "text") {
+    return new Response("body error", { status: 400 });
+  }
+  const { source, replyToken } = event;
+  if (source.type !== "user") {
+    return new Response("body error", { status: 400 });
+  }
+  const { userId } = source;
+  const { text } = event.message;
+  const queueData = {
+    userId,
+    content: text,
+    replyToken,
+  };
+  await c.env.QUEUE.send(queueData);
+  return c.json({ message: "ok" });
+});
+
 export default {
-  async fetch(req: Request, env: Environment): Promise<Response> {
-    // Request Check
-    const { pathname } = new URL(req.url);
-    if (pathname !== "/api/webhook") {
-      return new Response("path error", { status: 400 });
-    }
-    const method = req.method;
-    if (method.toLowerCase() !== "post") {
-      return new Response("path error", { status: 400 });
-    }
-    // Extract From Request Body
-    const data = await req.json<RequestBody>();
-    const event = data.events[0];
-    if (event.type !== "message" || event.message.type !== "text") {
-      return new Response("body error", { status: 400 });
-    }
-    const { source, replyToken } = event;
-    if (source.type !== "user") {
-      return new Response("body error", { status: 400 });
-    }
-    const { userId } = source;
-    const { text } = event.message;
-    const queueData = {
-      userId,
-      content: text,
-      replyToken,
-    };
-    await env.QUEUE.send(queueData);
-    return new Response("Success!");
-  },
-  async queue(batch: MessageBatch<Error>, env: Environment): Promise<void> {
+  fetch: app.fetch,
+  async queue(batch: MessageBatch<Error>, env: Bindings): Promise<void> {
     let messages = JSON.stringify(batch.messages);
     const queueMessages = JSON.parse(messages) as QueueMessage[];
     for await (const message of queueMessages) {
